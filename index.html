@@ -836,13 +836,15 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   $('icoCup').innerHTML = ICON.cup;
   // Size the dial from the height the timer view really has. Viewport units are
   // unreliable in iPhone home-screen apps, so measure the other rows instead.
-  // iOS home-screen apps can report a viewport shorter than the screen by the status-bar
-  // height, leaving an unpainted strip at the bottom. Stretch the page to the full screen.
+  // iOS home-screen apps can size the page shorter than the screen by the status-bar
+  // height, leaving an unpainted strip at the bottom. A home-screen app always fills the
+  // screen, so size the page to the screen. (Comparing with innerHeight does not work:
+  // once stretched, iOS reports the full height and the check would undo the stretch.)
   function fitScreen() {
     if (!navigator.standalone) return;
     const portrait = window.innerHeight >= window.innerWidth;
     const full = portrait ? Math.max(screen.height, screen.width) : Math.min(screen.height, screen.width);
-    document.documentElement.style.height = full > window.innerHeight ? full + 'px' : '';
+    document.documentElement.style.height = full + 'px';
   }
 
   function fitRing() {
@@ -884,7 +886,7 @@ if ('serviceWorker' in navigator) {
   const update = () => {
     const cs = getComputedStyle(probe);
     const vv = window.visualViewport ? Math.round(window.visualViewport.height) : '-';
-    document.getElementById('appVersion').textContent = 'バージョン 6　画面 ' + screen.width + '×' + screen.height
+    document.getElementById('appVersion').textContent = 'バージョン 7　画面 ' + screen.width + '×' + screen.height
       + '　表示 ' + innerWidth + '×' + innerHeight + '（' + vv + '）　余白 上' + parseFloat(cs.paddingTop) + ' 下' + parseFloat(cs.paddingBottom)
       + (navigator.standalone ? '　アプリ' : '　ブラウザ');
   };
