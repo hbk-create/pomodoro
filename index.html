@@ -155,7 +155,8 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   display: grid; grid-template-columns: repeat(3, 1fr);
   margin-left: calc(-1 * max(16px, env(safe-area-inset-left, 0px)));
   margin-right: calc(-1 * max(16px, env(safe-area-inset-right, 0px)));
-  padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  /* The labels may sit a little into the home-indicator area; keep at least 6px below them. */
+  padding: 8px max(16px, env(safe-area-inset-right, 0px)) max(6px, calc(env(safe-area-inset-bottom, 0px) - 14px)) max(16px, env(safe-area-inset-left, 0px));
   background: rgba(10, 12, 16, 0.86); border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 .tab {
@@ -877,22 +878,6 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
 }
 </script>
-<script>
-(() => {
-  // Version plus screen measurements, to diagnose the strip iOS leaves below home-screen apps.
-  const probe = document.createElement('div');
-  probe.style.cssText = 'position:fixed;visibility:hidden;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)';
-  document.body.appendChild(probe);
-  const update = () => {
-    const cs = getComputedStyle(probe);
-    const vv = window.visualViewport ? Math.round(window.visualViewport.height) : '-';
-    document.getElementById('appVersion').textContent = 'バージョン 7　画面 ' + screen.width + '×' + screen.height
-      + '　表示 ' + innerWidth + '×' + innerHeight + '（' + vv + '）　余白 上' + parseFloat(cs.paddingTop) + ' 下' + parseFloat(cs.paddingBottom)
-      + (navigator.standalone ? '　アプリ' : '　ブラウザ');
-  };
-  update();
-  window.addEventListener('resize', update);
-})();
-</script>
+<script>document.getElementById('appVersion').textContent = 'バージョン 8';</script>
 </body>
 </html>
