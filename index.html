@@ -414,6 +414,7 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
       </div>
       <p class="note">自分の写真はこの端末のブラウザにだけ保存されます。</p>
     </div>
+    <p class="note" id="appVersion"></p>
     <button class="done-btn" id="done">DONE</button>
   </div>
 </div>
@@ -858,5 +859,6 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
 }
 </script>
+<script>document.getElementById('appVersion').textContent = 'バージョン 3';</script>
 </body>
 </html>
