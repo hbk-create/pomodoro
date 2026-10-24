@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-title" content="Pomodoro">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
-<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="icon" type="image/png" href="icon-180.png">
 <style>
 /* Same reset the artifact skeleton provides. The bottom safe area is already
    handled by the tab bar, so only the top inset pads the page here. */
@@ -27,7 +27,8 @@ img { max-width: 100%; }
 /* Layout: one dark screen at dusk. Header, ring, start pill, settings card, tab bar. Single dark look on purpose. */
 :root {
   color-scheme: dark;
-  --night: #12171e;
+  /* Also the colour iPhone home-screen apps show below the page, so it matches the tab bar. */
+  --night: #0a0c10;
   --slate: #1d2530;
   --glass: rgba(40, 46, 56, 0.55);
   --glass-line: rgba(255, 255, 255, 0.14);
@@ -184,7 +185,7 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 /* Sheet */
 .scrim { position: fixed; inset: 0; z-index: 20; background: rgba(5, 7, 10, 0.55); display: flex; align-items: flex-end; justify-content: center; }
 .sheet {
-  width: 100%; max-width: 560px; max-height: 88%; overflow-y: auto;
+  position: relative; box-sizing: border-box; width: 100%; max-width: 560px; max-height: calc(100% - env(safe-area-inset-top, 0px) - 16px); overflow-y: auto;
   background: #1b2029; border: 1px solid var(--glass-line); border-bottom: 0; border-radius: 26px 26px 0 0;
   padding: 22px max(20px, env(safe-area-inset-right, 0px)) calc(22px + env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
   display: flex; flex-direction: column; gap: 18px;
@@ -743,11 +744,13 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   function openSheet(focusKey) {
     renderSheet();
     $('scrim').hidden = false;
+    // Scroll only inside the sheet; focusing or scrollIntoView would shift the whole page on iPhone.
+    const sheet = document.querySelector('.sheet');
     const target = focusKey ? $('st-' + focusKey) : null;
-    if (target) { target.scrollIntoView({ block: 'center' }); target.querySelector('button').focus(); }
-    else $('done').focus();
+    sheet.scrollTop = target ? Math.max(0, target.offsetTop - sheet.clientHeight / 3) : 0;
+    (target ? target.querySelector('button') : $('done')).focus({ preventScroll: true });
   }
-  function closeSheet() { $('scrim').hidden = true; }
+  function closeSheet() { $('scrim').hidden = true; window.scrollTo(0, 0); }
   $('gear').addEventListener('click', () => openSheet());
   document.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => openSheet(b.dataset.open)));
   $('done').addEventListener('click', closeSheet);
@@ -859,6 +862,6 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
 }
 </script>
-<script>document.getElementById('appVersion').textContent = 'バージョン 3';</script>
+<script>document.getElementById('appVersion').textContent = 'バージョン 4';</script>
 </body>
 </html>
