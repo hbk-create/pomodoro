@@ -862,6 +862,22 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
 }
 </script>
-<script>document.getElementById('appVersion').textContent = 'バージョン 4';</script>
+<script>
+(() => {
+  // Version plus screen measurements, to diagnose the strip iOS leaves below home-screen apps.
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;visibility:hidden;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)';
+  document.body.appendChild(probe);
+  const update = () => {
+    const cs = getComputedStyle(probe);
+    const vv = window.visualViewport ? Math.round(window.visualViewport.height) : '-';
+    document.getElementById('appVersion').textContent = 'バージョン 5　画面 ' + screen.width + '×' + screen.height
+      + '　表示 ' + innerWidth + '×' + innerHeight + '（' + vv + '）　余白 上' + parseFloat(cs.paddingTop) + ' 下' + parseFloat(cs.paddingBottom)
+      + (navigator.standalone ? '　アプリ' : '　ブラウザ');
+  };
+  update();
+  window.addEventListener('resize', update);
+})();
+</script>
 </body>
 </html>
