@@ -47,6 +47,7 @@ img { max-width: 100%; }
 [hidden] { display: none !important; }
 html, body { height: 100%; }
 body {
+  position: relative;
   background: var(--night);
   color: var(--ink);
   font-family: var(--f-ja);
@@ -54,8 +55,10 @@ body {
   -webkit-tap-highlight-color: transparent;
   -webkit-user-select: none; user-select: none;
 }
+/* Background and the settings layer are anchored to the page, not the viewport:
+   in iPhone home-screen apps the viewport can be shorter than the screen (see fitScreen). */
 .backdrop {
-  position: fixed; inset: 0 0 calc(-1 * env(safe-area-inset-bottom, 0px) - 80px); z-index: 0;
+  position: absolute; top: calc(-1 * env(safe-area-inset-top, 0px)); left: 0; right: 0; bottom: calc(-1 * env(safe-area-inset-bottom, 0px)); z-index: 0;
   background:
     radial-gradient(120% 60% at 100% 62%, rgba(231, 167, 124, 0.38), transparent 60%),
     radial-gradient(80% 40% at 92% 40%, rgba(150, 140, 190, 0.22), transparent 70%),
@@ -183,7 +186,7 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .text-btn { background: none; border: 0; color: var(--ink-faint); font-size: 12px; text-decoration: underline; cursor: pointer; align-self: flex-start; font-family: var(--f-ja); padding: 4px 0; }
 
 /* Sheet */
-.scrim { position: fixed; inset: 0; z-index: 20; background: rgba(5, 7, 10, 0.55); display: flex; align-items: flex-end; justify-content: center; }
+.scrim { position: absolute; top: calc(-1 * env(safe-area-inset-top, 0px)); left: 0; right: 0; bottom: 0; z-index: 20; background: rgba(5, 7, 10, 0.55); display: flex; align-items: flex-end; justify-content: center; }
 .sheet {
   position: relative; box-sizing: border-box; width: 100%; max-width: 560px; max-height: calc(100% - env(safe-area-inset-top, 0px) - 16px); overflow-y: auto;
   background: #1b2029; border: 1px solid var(--glass-line); border-bottom: 0; border-radius: 26px 26px 0 0;
@@ -833,6 +836,15 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   $('icoCup').innerHTML = ICON.cup;
   // Size the dial from the height the timer view really has. Viewport units are
   // unreliable in iPhone home-screen apps, so measure the other rows instead.
+  // iOS home-screen apps can report a viewport shorter than the screen by the status-bar
+  // height, leaving an unpainted strip at the bottom. Stretch the page to the full screen.
+  function fitScreen() {
+    if (!navigator.standalone) return;
+    const portrait = window.innerHeight >= window.innerWidth;
+    const full = portrait ? Math.max(screen.height, screen.width) : Math.min(screen.height, screen.width);
+    document.documentElement.style.height = full > window.innerHeight ? full + 'px' : '';
+  }
+
   function fitRing() {
     const view = $('v-timer');
     if (view.hidden) return;
@@ -846,9 +858,10 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
     const size = Math.max(160, Math.min(view.clientHeight - used, window.innerWidth * 0.86, 380));
     document.documentElement.style.setProperty('--ring', Math.floor(size) + 'px');
   }
-  window.addEventListener('resize', fitRing);
+  window.addEventListener('resize', () => { fitScreen(); fitRing(); });
   if (document.fonts) document.fonts.ready.then(fitRing);
 
+  fitScreen();
   applyBg();
   applyFont();
   fitRing();
@@ -871,7 +884,7 @@ if ('serviceWorker' in navigator) {
   const update = () => {
     const cs = getComputedStyle(probe);
     const vv = window.visualViewport ? Math.round(window.visualViewport.height) : '-';
-    document.getElementById('appVersion').textContent = 'バージョン 5　画面 ' + screen.width + '×' + screen.height
+    document.getElementById('appVersion').textContent = 'バージョン 6　画面 ' + screen.width + '×' + screen.height
       + '　表示 ' + innerWidth + '×' + innerHeight + '（' + vv + '）　余白 上' + parseFloat(cs.paddingTop) + ' 下' + parseFloat(cs.paddingBottom)
       + (navigator.standalone ? '　アプリ' : '　ブラウザ');
   };
