@@ -389,7 +389,7 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
       <div class="stepper" id="st-focus"><span class="name">作業時間</span><span class="ctrl"><button data-k="focus" data-d="-1" aria-label="作業時間を減らす">−</button><output id="oFocus">25<small>分</small></output><button data-k="focus" data-d="1" aria-label="作業時間を増やす">＋</button></span></div>
       <div class="stepper" id="st-brk"><span class="name">休憩時間</span><span class="ctrl"><button data-k="brk" data-d="-1" aria-label="休憩時間を減らす">−</button><output id="oBreak">5<small>分</small></output><button data-k="brk" data-d="1" aria-label="休憩時間を増やす">＋</button></span></div>
       <div class="stepper" id="st-reps"><span class="name">繰り返し</span><span class="ctrl"><button data-k="reps" data-d="-1" aria-label="回数を減らす">−</button><output id="oReps">4<small>回</small></output><button data-k="reps" data-d="1" aria-label="回数を増やす">＋</button></span></div>
-      <p class="note">繰り返しは作業の回数です。0にすると止めるまで続けます。最後の作業が終わると休憩なしで終了します。</p>
+      <p class="note">繰り返しは作業の回数です。0にすると止めるまで続けます。最後の作業のあとの休憩が終わると終了します。</p>
     </div>
     <div id="st-font">
       <div class="sec">数字の字体</div>
@@ -407,7 +407,7 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
     <div>
       <div class="switch"><label for="sound">切り替え時に音を鳴らす</label><input type="checkbox" id="sound" checked></div>
       <div class="presets"><button class="chip" id="soundTest">作業→休憩の音を試す</button><button class="chip" id="soundTest2">休憩→作業の音を試す</button></div>
-      <p class="note">音量はiPhone本体の音量ボタンで変わります。アプリを閉じている間や画面がロック中は鳴りません。切り替わると画面も一瞬光ります。</p>
+      <p class="note">音量はiPhone本体の音量ボタンで変わります。マナーモード中、アプリを閉じている間、画面がロック中は鳴りません。切り替わると画面も一瞬光ります。</p>
     </div>
     <div>
       <div class="sec">背景</div>
@@ -501,14 +501,15 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
       history.push({ at, min: cfg.focus });
       if (history.length > 2000) history = history.slice(-2000);
       store.set('pomo.history', history);
+      st.phase = 'break';
+    } else {
+      // The set ends after the last work session's break.
       if (cfg.reps && st.cycle >= cfg.reps) {
         st = { phase: 'done', cycle: st.cycle, running: false, endAt: 0, remaining: 0 };
         if (chime) notify('done');
         releaseWake();
         return;
       }
-      st.phase = 'break';
-    } else {
       st.phase = 'focus';
       st.cycle += 1;
     }
@@ -580,8 +581,8 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   // so it is resumed on every tap and when the app comes back.
   function unlockAudio() {
     try {
-      // 'playback' lets the sound play even with the iPhone's silent switch on (iOS 17+).
-      if (navigator.audioSession) navigator.audioSession.type = 'playback';
+      // 'ambient' keeps the sound silent while the iPhone is in silent mode, as the user prefers.
+      if (navigator.audioSession) navigator.audioSession.type = 'ambient';
       if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
       if (audio.state !== 'running') audio.resume();
     } catch (e) { audio = null; }
@@ -923,6 +924,6 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
 }
 </script>
-<script>document.getElementById('appVersion').textContent = 'バージョン 10';</script>
+<script>document.getElementById('appVersion').textContent = 'バージョン 12';</script>
 </body>
 </html>
