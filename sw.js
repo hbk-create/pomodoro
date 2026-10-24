@@ -1,5 +1,5 @@
 // Cache-first so the timer opens without a connection after the first visit.
-const CACHE = 'pomodoro-v1';
+const CACHE = 'pomodoro-v2';
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png", "bg-desk.webp", "bg-morning.webp", "bg-sunset.webp", "bg-night.webp", "bg-bedroom.webp"];
 
 self.addEventListener('install', (e) => {
