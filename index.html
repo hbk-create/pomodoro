@@ -81,7 +81,7 @@ body.rest .backdrop { filter: hue-rotate(-25deg) saturate(0.8); transition: filt
 }
 .top { display: flex; justify-content: space-between; align-items: flex-start; padding-block: 20px 0; }
 .brand { font-family: var(--f-display); font-weight: 300; letter-spacing: 0.55em; font-size: 15px; }
-.tag { font-family: var(--f-display); font-weight: 300; color: var(--ink-dim); font-size: 13px; line-height: 1.5; margin-top: 12px; }
+.tag { font-family: var(--f-display); font-weight: 300; color: var(--ink-dim); font-size: 15px; line-height: 1.5; margin-top: 12px; }
 .icon-btn {
   background: none; border: 0; color: var(--ink-dim); padding: 6px; border-radius: 50%; cursor: pointer;
 }
@@ -924,6 +924,6 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
 }
 </script>
-<script>document.getElementById('appVersion').textContent = 'バージョン 12';</script>
+<script>document.getElementById('appVersion').textContent = 'バージョン 13';</script>
 </body>
 </html>
