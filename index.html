@@ -196,6 +196,11 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   animation: up 0.25s ease-out;
 }
 @keyframes up { from { transform: translateY(30px); opacity: 0.6; } }
+/* Grabber: shows the sheet can be swiped down to close. */
+.sheet::before {
+  content: ""; flex: none; align-self: center; width: 40px; height: 5px; border-radius: 3px;
+  background: rgba(255, 255, 255, 0.25); margin: -10px 0 -6px;
+}
 .sheet h3 { margin: 0; font-family: var(--f-display); font-weight: 300; letter-spacing: 0.35em; font-size: 14px; }
 .sheet .sec { font-size: 12px; color: var(--ink-dim); margin-bottom: 8px; }
 .presets { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -401,7 +406,8 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
     </div>
     <div>
       <div class="switch"><label for="sound">切り替え時に音を鳴らす</label><input type="checkbox" id="sound" checked></div>
-      <p class="note">iPhoneのマナーモード中は鳴らないことがあります。切り替わると画面も一瞬光ります。</p>
+      <div class="presets"><button class="chip" id="soundTest">作業→休憩の音を試す</button><button class="chip" id="soundTest2">休憩→作業の音を試す</button></div>
+      <p class="note">音量はiPhone本体の音量ボタンで変わります。アプリを閉じている間や画面がロック中は鳴りません。切り替わると画面も一瞬光ります。</p>
     </div>
     <div>
       <div class="sec">背景</div>
@@ -570,21 +576,26 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   }
 
   // Sound: WebAudio needs a tap to unlock on iPhone, so it is created on the first START.
+  // iOS also pauses it ("suspended" / "interrupted") when the app goes to the background,
+  // so it is resumed on every tap and when the app comes back.
   function unlockAudio() {
     try {
+      // 'playback' lets the sound play even with the iPhone's silent switch on (iOS 17+).
       if (navigator.audioSession) navigator.audioSession.type = 'playback';
       if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
-      if (audio.state === 'suspended') audio.resume();
+      if (audio.state !== 'running') audio.resume();
     } catch (e) { audio = null; }
   }
+  document.addEventListener('pointerdown', () => { if (audio) unlockAudio(); }, { passive: true });
   function chime(notes) {
     if (!cfg.sound || !audio) return;
+    if (audio.state !== 'running') audio.resume().catch(() => {});
     const t0 = audio.currentTime + 0.05;
     notes.forEach(([f, t, d]) => {
       const o = audio.createOscillator(), g = audio.createGain();
       o.type = 'sine'; o.frequency.value = f;
       g.gain.setValueAtTime(0, t0 + t);
-      g.gain.linearRampToValueAtTime(0.35, t0 + t + 0.02);
+      g.gain.linearRampToValueAtTime(0.6, t0 + t + 0.02);
       g.gain.exponentialRampToValueAtTime(0.001, t0 + t + d);
       o.connect(g).connect(audio.destination);
       o.start(t0 + t); o.stop(t0 + t + d + 0.05);
@@ -645,7 +656,7 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   });
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') { tick(); if (st.running) requestWake(); }
+    if (document.visibilityState === 'visible') { if (audio) unlockAudio(); tick(); if (st.running) requestWake(); }
   });
 
   // Tabs
@@ -758,6 +769,38 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   $('gear').addEventListener('click', () => openSheet());
   document.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => openSheet(b.dataset.open)));
   $('done').addEventListener('click', closeSheet);
+
+  // Swipe the sheet down to close it, when its content is scrolled to the top.
+  (() => {
+    const sheet = document.querySelector('.sheet');
+    let startY = null, dy = 0, t0 = 0;
+    sheet.addEventListener('touchstart', (e) => {
+      if (sheet.scrollTop > 0 || e.touches.length > 1) { startY = null; return; }
+      startY = e.touches[0].clientY; dy = 0; t0 = Date.now();
+      sheet.style.transition = 'none';
+    }, { passive: true });
+    sheet.addEventListener('touchmove', (e) => {
+      if (startY === null) return;
+      dy = e.touches[0].clientY - startY;
+      if (dy <= 0) { sheet.style.transform = ''; return; }
+      e.preventDefault();
+      sheet.style.transform = `translateY(${dy}px)`;
+    }, { passive: false });
+    const end = () => {
+      if (startY === null) return;
+      startY = null;
+      const fast = dy / Math.max(1, Date.now() - t0) > 0.6;
+      sheet.style.transition = 'transform 0.2s ease';
+      if (dy > 110 || (dy > 40 && fast)) {
+        sheet.style.transform = 'translateY(100%)';
+        setTimeout(() => { closeSheet(); sheet.style.transform = ''; sheet.style.transition = ''; }, 200);
+      } else {
+        sheet.style.transform = '';
+      }
+    };
+    sheet.addEventListener('touchend', end);
+    sheet.addEventListener('touchcancel', end);
+  })();
   document.querySelector('.ring-wrap').addEventListener('click', () => openSheet('color'));
   $('fonts').addEventListener('click', (e) => {
     const b = e.target.closest('[data-f]'); if (!b) return;
@@ -787,6 +830,8 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
     cfg[k] = Math.min(hi, Math.max(lo, cfg[k] + (+b.dataset.d) * step));
     applyCfg();
   }));
+  $('soundTest').addEventListener('click', () => { unlockAudio(); if (!cfg.sound) { cfg.sound = true; $('sound').checked = true; store.set('pomo.cfg', cfg); } notify('break'); });
+  $('soundTest2').addEventListener('click', () => { unlockAudio(); if (!cfg.sound) { cfg.sound = true; $('sound').checked = true; store.set('pomo.cfg', cfg); } notify('focus'); });
   $('sound').addEventListener('change', (e) => { cfg.sound = e.target.checked; store.set('pomo.cfg', cfg); if (cfg.sound) { unlockAudio(); chime([[880, 0, 0.5]]); } });
 
   // Backgrounds: plain black, the bundled photos, or the viewer's own photo.
@@ -878,6 +923,6 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
 }
 </script>
-<script>document.getElementById('appVersion').textContent = 'バージョン 8';</script>
+<script>document.getElementById('appVersion').textContent = 'バージョン 10';</script>
 </body>
 </html>

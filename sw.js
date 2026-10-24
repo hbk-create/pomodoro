@@ -1,6 +1,6 @@
 // The page itself is fetched network-first so updates show on the next open;
 // everything else is cache-first so the timer still opens without a connection.
-const CACHE = 'pomodoro-v8';
+const CACHE = 'pomodoro-v10';
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon-180.png", "bg-desk.webp", "bg-morning.webp", "bg-sunset.webp", "bg-night.webp", "bg-bedroom.webp"];
 
 self.addEventListener('install', (e) => {
