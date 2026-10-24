@@ -1,0 +1,837 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-title" content="Pomodoro">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+/* Same reset the artifact skeleton provides. The bottom safe area is already
+   handled by the tab bar, so only the top inset pads the page here. */
+html { box-sizing: border-box; padding-top: env(safe-area-inset-top, 0px); }
+body { margin: 0; font: 14px system-ui, -apple-system, sans-serif; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+</style>
+<title>ポモドーロタイマー</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@200&family=Antonio:wght@100&family=Roboto+Condensed:wght@100&family=Saira+Extra+Condensed:wght@100&family=Jost:wght@200;300;400&family=Zen+Kaku+Gothic+New:wght@400;500&display=swap">
+<style>
+/* Layout: one dark screen at dusk. Header, ring, start pill, settings card, tab bar. Single dark look on purpose. */
+:root {
+  color-scheme: dark;
+  --night: #12171e;
+  --slate: #1d2530;
+  --glass: rgba(40, 46, 56, 0.55);
+  --glass-line: rgba(255, 255, 255, 0.14);
+  --ink: #f2efe9;
+  --ink-dim: rgba(242, 239, 233, 0.62);
+  --ink-faint: rgba(242, 239, 233, 0.32);
+  --dusk: #e7a77c;
+  --rest: #9cc7c0;
+  --wedge: #c99a9e;
+  --f-num: "Oswald";
+  --w-num: 200;
+  --f-display: "Jost", "Helvetica Neue", "Avenir Next", system-ui, sans-serif;
+  --f-thin: -apple-system, "SF Pro Display", "Helvetica Neue", "Jost", system-ui, sans-serif;
+  --f-ja:"Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--night);
+  color: var(--ink);
+  font-family: var(--f-ja);
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none; user-select: none;
+}
+.backdrop {
+  position: fixed; inset: 0; z-index: 0;
+  background:
+    radial-gradient(120% 60% at 100% 62%, rgba(231, 167, 124, 0.38), transparent 60%),
+    radial-gradient(80% 40% at 92% 40%, rgba(150, 140, 190, 0.22), transparent 70%),
+    linear-gradient(90deg, #141a22 0%, #1b222c 62%, #2a2f3c 78%, #4a4552 100%);
+  background-size: cover; background-position: center;
+}
+.backdrop::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(10, 13, 18, 0.35), rgba(10, 13, 18, 0.15) 40%, rgba(10, 13, 18, 0.7));
+}
+.backdrop.photo::after { background: linear-gradient(180deg, rgba(10, 13, 18, 0.55), rgba(10, 13, 18, 0.35) 40%, rgba(10, 13, 18, 0.8)); }
+body.rest .backdrop { filter: hue-rotate(-25deg) saturate(0.8); transition: filter 1.2s; }
+
+.app {
+  position: relative; z-index: 1;
+  height: 100%;
+  display: flex; flex-direction: column;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.top { display: flex; justify-content: space-between; align-items: flex-start; padding-block: 20px 0; }
+.brand { font-family: var(--f-display); font-weight: 300; letter-spacing: 0.55em; font-size: 15px; }
+.tag { font-family: var(--f-display); font-weight: 300; color: var(--ink-dim); font-size: 13px; line-height: 1.5; margin-top: 12px; }
+.icon-btn {
+  background: none; border: 0; color: var(--ink-dim); padding: 6px; border-radius: 50%; cursor: pointer;
+}
+.icon-btn:focus-visible, button:focus-visible { outline: 2px solid var(--dusk); outline-offset: 3px; }
+
+main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.view[hidden] { display: none !important; }
+
+/* Timer view */
+.timer { justify-content: space-evenly; align-items: center; gap: 12px; padding-block: 8px; }
+/* The dial takes whatever height is left after the header, controls, card and tabs. */
+.ring-wrap { position: relative; width: clamp(190px, calc(100dvh - 340px), min(86vw, 380px)); aspect-ratio: 1; max-width: 100%; container-type: inline-size; }
+.ring-wrap svg { width: 100%; height: 100%; overflow: visible; }
+.ring-base { fill: rgba(10, 13, 18, 0.25); stroke: rgba(255, 255, 255, 0.22); stroke-width: 1.2; }
+.wedge { fill: var(--wedge); opacity: 0.62; transition: fill 0.6s; }
+.time, .phase { text-shadow: 0 1px 12px rgba(10, 13, 18, 0.45); }
+/* Three rows so the countdown sits exactly at the centre of the circle. */
+.ring-center { position: absolute; inset: 0; display: grid; grid-template-rows: 1fr auto 1fr; justify-items: center; }
+.ring-top { align-self: end; padding-bottom: 5cqw; }
+.ring-bottom { align-self: start; display: flex; flex-direction: column; align-items: center; gap: 2cqw; padding-top: 3cqw; }
+.phase { font-family: var(--f-thin); font-weight: 300; letter-spacing: 0.32em; font-size: clamp(11px, 5cqw, 15px); color: rgba(242, 239, 233, 0.82); padding-left: 0.32em; }
+.time { font-family: var(--f-num), var(--f-thin); font-weight: var(--w-num); font-size: 29cqw; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.time.done { font-family: var(--f-thin); font-weight: 200; font-size: 12cqw; letter-spacing: 0.04em; }
+.cycle { font-family: var(--f-display); font-weight: 300; font-size: 12px; color: var(--ink-faint); letter-spacing: 0.15em; min-height: 1em; }
+.phase-ico { color: var(--ink-dim); margin-top: 4px; }
+
+.controls { display: flex; align-items: center; gap: 18px; }
+.start {
+  display: flex; align-items: center; justify-content: center; gap: 22px;
+  min-width: 210px; height: 64px; padding: 0 30px;
+  border-radius: 32px; border: 1px solid var(--glass-line);
+  background: var(--glass); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  color: var(--ink); font-family: var(--f-display); font-weight: 300; font-size: 17px; letter-spacing: 0.42em;
+  cursor: pointer; transition: transform 0.15s;
+}
+.start:active { transform: scale(0.97); }
+.side {
+  width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--glass-line);
+  background: rgba(40, 46, 56, 0.35); color: var(--ink-dim); display: grid; place-items: center; cursor: pointer;
+}
+.side:disabled { opacity: 0.3; }
+/* Screen-on status shows briefly as a toast so it never pushes the layout. */
+.wake {
+  position: fixed; z-index: 15; left: 50%; transform: translateX(-50%);
+  top: calc(env(safe-area-inset-top, 0px) + 10px); width: max-content; max-width: calc(100% - 32px);
+  font-size: 12px; color: var(--ink); text-align: center; line-height: 1.5;
+  background: rgba(20, 24, 31, 0.88); border: 1px solid var(--glass-line); border-radius: 14px; padding: 8px 14px;
+  pointer-events: none;
+}
+.wake:empty { display: none; }
+
+.card {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--glass-line); border-radius: 26px;
+  background: var(--glass); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  padding-block: 16px; margin-bottom: 14px; width: 100%; max-width: 520px;
+}
+.cell {
+  background: none; border: 0; color: var(--ink); cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 6px; font-family: var(--f-ja);
+}
+.cell + .cell { border-left: 1px solid var(--glass-line); }
+.cell .lbl { font-size: 12px; color: var(--ink-dim); }
+.cell .val { font-family: var(--f-display); font-weight: 300; font-size: 22px; }
+.cell .val small { font-family: var(--f-ja); font-size: 13px; margin-left: 3px; }
+.cell svg { color: var(--ink-dim); }
+
+/* Tab bar */
+.tabs {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  margin-left: calc(-1 * max(16px, env(safe-area-inset-left, 0px)));
+  margin-right: calc(-1 * max(16px, env(safe-area-inset-right, 0px)));
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  background: rgba(10, 12, 16, 0.86); border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.tab {
+  background: none; border: 0; color: var(--ink-faint); cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 4px; font-family: var(--f-display); font-size: 13px; padding-block: 4px;
+}
+.tab[aria-selected="true"] { color: var(--ink); }
+.tab[aria-selected="true"] span { border-bottom: 2px solid var(--ink); padding-bottom: 3px; }
+
+/* History & stats */
+.panel { overflow-y: auto; padding-block: 20px; gap: 18px; }
+.panel h2 { font-family: var(--f-display); font-weight: 300; letter-spacing: 0.35em; font-size: 14px; margin: 0; color: var(--ink-dim); }
+.glass-block { border: 1px solid var(--glass-line); border-radius: 20px; background: var(--glass); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); padding: 16px 18px; }
+.day { font-size: 12px; color: var(--ink-dim); margin: 4px 0 6px; }
+.row { display: flex; justify-content: space-between; padding-block: 9px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-family: var(--f-display); font-weight: 300; font-variant-numeric: tabular-nums; }
+.row:last-child { border-bottom: 0; }
+.empty { color: var(--ink-faint); font-size: 13px; line-height: 1.7; }
+.kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.kpi { text-align: center; }
+.kpi b { display: block; font-family: var(--f-display); font-weight: 200; font-size: 34px; font-variant-numeric: tabular-nums; }
+.kpi span { font-size: 11px; color: var(--ink-dim); }
+.bars { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; align-items: end; height: 140px; }
+.bar { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; height: 100%; }
+.bar i { display: block; width: 60%; min-height: 2px; border-radius: 4px 4px 1px 1px; background: rgba(242, 239, 233, 0.35); }
+.bar.today i { background: var(--dusk); }
+.bar em { font-style: normal; font-size: 10px; color: var(--ink-faint); font-family: var(--f-display); }
+.bar small { font-size: 10px; color: var(--ink-dim); font-family: var(--f-display); min-height: 1em; }
+.text-btn { background: none; border: 0; color: var(--ink-faint); font-size: 12px; text-decoration: underline; cursor: pointer; align-self: flex-start; font-family: var(--f-ja); padding: 4px 0; }
+
+/* Sheet */
+.scrim { position: fixed; inset: 0; z-index: 20; background: rgba(5, 7, 10, 0.55); display: flex; align-items: flex-end; justify-content: center; }
+.sheet {
+  width: 100%; max-width: 560px; max-height: 88%; overflow-y: auto;
+  background: #1b2029; border: 1px solid var(--glass-line); border-bottom: 0; border-radius: 26px 26px 0 0;
+  padding: 22px max(20px, env(safe-area-inset-right, 0px)) calc(22px + env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
+  display: flex; flex-direction: column; gap: 18px;
+  animation: up 0.25s ease-out;
+}
+@keyframes up { from { transform: translateY(30px); opacity: 0.6; } }
+.sheet h3 { margin: 0; font-family: var(--f-display); font-weight: 300; letter-spacing: 0.35em; font-size: 14px; }
+.sheet .sec { font-size: 12px; color: var(--ink-dim); margin-bottom: 8px; }
+.presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  border: 1px solid var(--glass-line); background: rgba(255, 255, 255, 0.04); color: var(--ink);
+  border-radius: 999px; padding: 9px 14px; font-family: var(--f-display); font-size: 14px; cursor: pointer; font-variant-numeric: tabular-nums;
+}
+.chip[aria-pressed="true"] { border-color: var(--dusk); color: var(--dusk); }
+.stepper { display: flex; align-items: center; justify-content: space-between; padding-block: 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.stepper:last-child { border-bottom: 0; }
+.stepper .name { font-size: 14px; }
+.stepper .ctrl { display: flex; align-items: center; gap: 14px; }
+.stepper button { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--glass-line); background: rgba(255, 255, 255, 0.05); color: var(--ink); font-size: 20px; cursor: pointer; }
+.stepper output { min-width: 64px; text-align: center; font-family: var(--f-display); font-size: 20px; font-weight: 300; font-variant-numeric: tabular-nums; }
+.stepper output small { font-family: var(--f-ja); font-size: 12px; margin-left: 2px; }
+.swatches { display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 8px; scrollbar-width: none; }
+.swatches::-webkit-scrollbar { display: none; }
+.swatch {
+  flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
+  border: 2px solid rgba(255, 255, 255, 0.12); background: var(--c);
+}
+.swatch[aria-pressed="true"] { box-shadow: 0 0 0 3px #1b2029, 0 0 0 5px var(--ink); }
+.fonts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.font-btn {
+  border: 1px solid var(--glass-line); background: rgba(255, 255, 255, 0.04); color: var(--ink-dim);
+  border-radius: 14px; padding: 10px 6px 8px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.font-btn b { font-size: 38px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.font-btn span { font-size: 10px; font-family: var(--f-ja); }
+.font-btn[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); background: rgba(255, 255, 255, 0.1); }
+.marks { display: flex; flex-wrap: wrap; gap: 10px; }
+.mark-btn {
+  width: 52px; height: 52px; border-radius: 14px; border: 1px solid var(--glass-line);
+  background: rgba(255, 255, 255, 0.04); color: var(--ink-dim); display: grid; place-items: center; cursor: pointer;
+}
+.mark-btn[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); background: rgba(255, 255, 255, 0.1); }
+.color-row + .color-row { margin-top: 10px; }
+.color-row .sec { display: flex; align-items: center; gap: 8px; }
+.color-row .sec i { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+.ring-wrap { cursor: pointer; }
+.switch { display: flex; justify-content: space-between; align-items: center; font-size: 14px; padding-block: 6px; }
+.switch input { width: 46px; height: 26px; accent-color: var(--dusk); }
+.bgs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px; }
+.bg-tile { background: none; border: 0; padding: 0; color: var(--ink-dim); font-size: 11px; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; font-family: var(--f-ja); }
+.thumb { width: 100%; aspect-ratio: 3 / 4; border-radius: 12px; border: 1px solid var(--glass-line); background-size: cover; background-position: center; }
+.bg-tile[aria-pressed="true"] .thumb { box-shadow: 0 0 0 2px #1b2029, 0 0 0 4px var(--ink); }
+.bg-tile[aria-pressed="true"] { color: var(--ink); }
+.t-black { background: #000; }
+.backdrop.black { background: #000; }
+.backdrop.black::after { display: none; }
+.t-photo { background-color: rgba(255, 255, 255, 0.05); display: grid; place-items: center; }
+.t-photo:empty::after { content: "＋"; color: var(--ink-faint); font-size: 18px; }
+.photo-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.photo-row label, .photo-row button {
+  border: 1px solid var(--glass-line); background: rgba(255, 255, 255, 0.05); color: var(--ink);
+  border-radius: 12px; padding: 10px 14px; font-size: 13px; cursor: pointer; font-family: var(--f-ja);
+}
+.photo-row input { display: none; }
+.note { font-size: 11px; color: var(--ink-faint); line-height: 1.7; margin: 0; }
+.done-btn { align-self: stretch; height: 50px; border-radius: 25px; border: 0; background: var(--ink); color: var(--night); font-family: var(--f-display); letter-spacing: 0.3em; font-size: 15px; cursor: pointer; }
+.confirm { display: flex; gap: 10px; align-items: center; font-size: 12px; color: var(--ink-dim); flex-wrap: wrap; }
+.confirm button { border: 1px solid var(--glass-line); background: rgba(255,255,255,0.05); color: var(--ink); border-radius: 10px; padding: 6px 12px; font-size: 12px; cursor: pointer; font-family: var(--f-ja); }
+
+.flash { position: fixed; inset: 0; z-index: 30; pointer-events: none; background: var(--ink); opacity: 0; }
+.flash.on { animation: flash 1.4s ease-out; }
+@keyframes flash { 0% { opacity: 0.35; } 100% { opacity: 0; } }
+
+@media (max-height: 680px) {
+  .tag { display: none; }
+  .top { padding-block: 12px 0; }
+  .timer { padding-block: 4px; gap: 8px; }
+  .card { padding-block: 10px; margin-bottom: 10px; }
+  .start { height: 54px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+
+</head>
+<body>
+<div class="backdrop" id="backdrop"></div>
+<div class="flash" id="flash"></div>
+
+<div class="app">
+  <header class="top">
+    <div>
+      <div class="brand">POMODORO</div>
+      <div class="tag">Small steps.<br>Big changes.</div>
+    </div>
+    <button class="icon-btn" id="gear" aria-label="設定を開く">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </header>
+
+  <main>
+    <section class="view timer" id="v-timer">
+      <div class="ring-wrap">
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          <circle class="ring-base" cx="100" cy="100" r="96"/>
+          <path class="wedge" id="wedge" d=""/>        </svg>
+        <div class="ring-center">
+          <div class="ring-top"><div class="phase" id="phase">FOCUS</div></div>
+          <div class="time" id="time" role="timer" aria-live="off">25:00</div>
+          <div class="ring-bottom">
+            <div class="cycle" id="cycle">1 / 4</div>
+            <div class="phase-ico" id="phaseIco"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="side" id="reset" aria-label="最初に戻す">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+        </button>
+        <button class="start" id="start"><span id="startIco"></span><span id="startTxt">START</span></button>
+        <button class="side" id="skip" aria-label="次へ進む">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5l10 7-10 7z"/><path d="M19 5v14"/></svg>
+        </button>
+      </div>
+      <div class="wake" id="wake"></div>
+
+      <div class="card">
+        <button class="cell" data-open="focus">
+          <span id="icoTomato"></span>
+          <span class="lbl">作業時間</span>
+          <span class="val"><span id="cFocus">25</span><small>分</small></span>
+        </button>
+        <button class="cell" data-open="brk">
+          <span id="icoCup"></span>
+          <span class="lbl">休憩時間</span>
+          <span class="val"><span id="cBreak">5</span><small>分</small></span>
+        </button>
+        <button class="cell" data-open="reps">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.3 4.9L20 16"/><path d="M20 20v-4h-4"/></svg>
+          <span class="lbl">繰り返し</span>
+          <span class="val"><span id="cReps">4</span><small id="cRepsU">回</small></span>
+        </button>
+      </div>
+    </section>
+
+    <section class="view panel" id="v-history" hidden>
+      <h2>HISTORY</h2>
+      <div id="historyList"></div>
+      <div class="confirm" id="clearWrap">
+        <button class="text-btn" id="clearAsk">記録をすべて消す</button>
+      </div>
+    </section>
+
+    <section class="view panel" id="v-stats" hidden>
+      <h2>STATS</h2>
+      <div class="glass-block kpis">
+        <div class="kpi"><b id="kToday">0</b><span>今日の完了</span></div>
+        <div class="kpi"><b id="kMin">0</b><span>今日の作業（分）</span></div>
+        <div class="kpi"><b id="kWeek">0</b><span>7日間の完了</span></div>
+      </div>
+      <div class="glass-block">
+        <div class="day">直近7日の完了回数</div>
+        <div class="bars" id="bars"></div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" data-view="timer" aria-selected="true">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3 3 10.5V21h6.5v-6h5v6H21V10.5z"/></svg><span>Timer</span>
+    </button>
+    <button class="tab" role="tab" data-view="history" aria-selected="false">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg><span>History</span>
+    </button>
+    <button class="tab" role="tab" data-view="stats" aria-selected="false">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="3.5" y="13" width="4" height="7.5" rx="1"/><rect x="10" y="8" width="4" height="12.5" rx="1"/><rect x="16.5" y="3.5" width="4" height="17" rx="1"/></svg><span>Stats</span>
+    </button>
+  </nav>
+</div>
+
+<div class="scrim" id="scrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <h3 id="sheetTitle">SETTINGS</h3>
+    <div>
+      <div class="sec">プリセット</div>
+      <div class="presets" id="presets"></div>
+    </div>
+    <div>
+      <div class="sec">カスタム</div>
+      <div class="stepper" id="st-focus"><span class="name">作業時間</span><span class="ctrl"><button data-k="focus" data-d="-1" aria-label="作業時間を減らす">−</button><output id="oFocus">25<small>分</small></output><button data-k="focus" data-d="1" aria-label="作業時間を増やす">＋</button></span></div>
+      <div class="stepper" id="st-brk"><span class="name">休憩時間</span><span class="ctrl"><button data-k="brk" data-d="-1" aria-label="休憩時間を減らす">−</button><output id="oBreak">5<small>分</small></output><button data-k="brk" data-d="1" aria-label="休憩時間を増やす">＋</button></span></div>
+      <div class="stepper" id="st-reps"><span class="name">繰り返し</span><span class="ctrl"><button data-k="reps" data-d="-1" aria-label="回数を減らす">−</button><output id="oReps">4<small>回</small></output><button data-k="reps" data-d="1" aria-label="回数を増やす">＋</button></span></div>
+      <p class="note">繰り返しは作業の回数です。0にすると止めるまで続けます。最後の作業が終わると休憩なしで終了します。</p>
+    </div>
+    <div id="st-font">
+      <div class="sec">数字の字体</div>
+      <div class="fonts" id="fonts"></div>
+    </div>
+    <div id="st-mark">
+      <div class="sec">作業中のマーク</div>
+      <div class="marks" id="marks"></div>
+    </div>
+    <div id="st-color">
+      <div class="color-row"><div class="sec"><i id="dotFocus"></i>作業中の色</div><div class="swatches" id="swFocus"></div></div>
+      <div class="color-row"><div class="sec"><i id="dotBreak"></i>休憩中の色</div><div class="swatches" id="swBreak"></div></div>
+      <p class="note">タイマーの円を押しても、ここを開けます。</p>
+    </div>
+    <div>
+      <div class="switch"><label for="sound">切り替え時に音を鳴らす</label><input type="checkbox" id="sound" checked></div>
+      <p class="note">iPhoneのマナーモード中は鳴らないことがあります。切り替わると画面も一瞬光ります。</p>
+    </div>
+    <div>
+      <div class="sec">背景</div>
+      <div class="bgs" id="bgs">
+        <button class="bg-tile" data-bg="black" aria-label="真っ黒"><span class="thumb t-black"></span><span>黒</span></button>
+        <button class="bg-tile" data-bg="desk" aria-label="窓辺の机"><span class="thumb" style="background-image:url('bg-desk.webp')"></span><span>窓辺</span></button>
+        <button class="bg-tile" data-bg="morning" aria-label="朝の書斎"><span class="thumb" style="background-image:url('bg-morning.webp')"></span><span>朝の書斎</span></button>
+        <button class="bg-tile" data-bg="sunset" aria-label="夕焼けの書斎"><span class="thumb" style="background-image:url('bg-sunset.webp')"></span><span>夕焼け</span></button>
+        <button class="bg-tile" data-bg="night" aria-label="夜の書斎"><span class="thumb" style="background-image:url('bg-night.webp')"></span><span>夜の書斎</span></button>
+        <button class="bg-tile" data-bg="bedroom" aria-label="夜の寝室"><span class="thumb" style="background-image:url('bg-bedroom.webp')"></span><span>夜の寝室</span></button>
+        <button class="bg-tile" data-bg="photo" aria-label="自分の写真"><span class="thumb t-photo" id="thumbPhoto"></span><span>自分の写真</span></button>
+      </div>
+      <div class="photo-row">
+        <label for="photo">写真を選ぶ<input type="file" id="photo" accept="image/*"></label>
+      </div>
+      <p class="note">自分の写真はこの端末のブラウザにだけ保存されます。</p>
+    </div>
+    <button class="done-btn" id="done">DONE</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  // Tomato: a round body left open at the top, with a six-pointed star for the calyx.
+  const star = Array.from({ length: 12 }, (_, i) => {
+    const r = i % 2 ? 1.25 : 2.9, a = (-90 + 30 * i) * Math.PI / 180;
+    return `${(12 + r * Math.cos(a)).toFixed(2)},${(7.5 + r * Math.sin(a)).toFixed(2)}`;
+  }).join(' ');
+  const tomato = (size) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="0.9" stroke-linejoin="round"><path d="M9.6 8.42A7.6 6.2 0 1 0 14.4 8.42"/><polygon points="${star}"/></svg>`;
+  // Marks for the work phase. Each is drawn on a 24px grid with thin strokes.
+  const MARKS = {
+    laptop: '<rect x="5" y="6" width="14" height="9.5" rx="1.2"/><path d="M3 18.5h18l-1.6-3H4.6z"/>',
+    note: '<rect x="4.5" y="4" width="11" height="16" rx="1.2"/><path d="M7.5 8.5h5M7.5 11.5h5M7.5 14.5h3"/><path d="M18.6 5.2l1.6 1.6-4.4 8.8-1.9.6.3-2z"/>',
+    book: '<path d="M12 6.5C10 5 7 4.6 4 5v13c3-.4 6 0 8 1.5 2-1.5 5-1.9 8-1.5V5c-3-.4-6 0-8 1.5z"/><path d="M12 6.5v13"/>',
+    headphones: '<path d="M4.5 15v-3a7.5 7.5 0 0 1 15 0v3"/><rect x="3.5" y="14" width="4" height="6" rx="1.5"/><rect x="16.5" y="14" width="4" height="6" rx="1.5"/>',
+    bulb: '<path d="M9.4 17.2h5.2M10.2 20h3.6"/><path d="M12 3.5a6 6 0 0 0-3.6 10.8c.6.5 1 1.1 1 1.9v1h5.2v-1c0-.8.4-1.4 1-1.9A6 6 0 0 0 12 3.5z"/>'
+  };
+  const mark = (k, size) => k === 'tomato' || !MARKS[k] ? tomato(size)
+    : `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">${MARKS[k]}</svg>`;
+  const DONE_TEXT = 'Well done.';
+  // Tall, thin sans-serif faces for the countdown.
+  const FONTS = {
+    oswald: ['Oswald', 200, 'Oswald'],
+    antonio: ['Antonio', 100, 'Antonio'],
+    roboto: ['Roboto Condensed', 100, 'Roboto Condensed'],
+    saira: ['Saira Extra Condensed', 100, 'Saira'],
+  };
+  function applyFont() {
+    const [family, weight] = FONTS[cfg.font] || FONTS.antonio;
+    document.documentElement.style.setProperty('--f-num', `"${family}"`);
+    document.documentElement.style.setProperty('--w-num', weight);
+  }
+  const MARK_NAMES ={ laptop: 'ノートPC', note: 'ノートとペン', book: '本', headphones: 'ヘッドホン', bulb: '電球', tomato: 'トマト' };
+  const ICON = {
+    cup: '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M17 10.5h1.5a2.5 2.5 0 0 1 0 5H17"/><path d="M3 21h16"/><path d="M8.5 3.5c-.6.8-.6 1.7 0 2.5M12 3.5c-.6.8-.6 1.7 0 2.5"/></svg>',
+    play: '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l14 8-14 8z"/></svg>',
+    pause: '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><rect x="5.5" y="4" width="4.5" height="16" rx="1"/><rect x="14" y="4" width="4.5" height="16" rx="1"/></svg>',
+    check: '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/></svg>'
+  };
+  const PRESETS = [
+    { focus: 25, brk: 5, reps: 4 },
+    { focus: 50, brk: 10, reps: 3 },
+    { focus: 45, brk: 15, reps: 2 },
+    { focus: 15, brk: 3, reps: 6 },
+    { focus: 25, brk: 5, reps: 0 }
+  ];
+  const $ = (id) => document.getElementById(id);
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+  };
+
+  const COLORS = ['#7aa7ee', '#8a85f5', '#e383b8', '#f2738a', '#f28b74', '#f5a466', '#f2cf6e', '#9cc78f', '#7cc3c6', '#4f5a68', '#6b5765', '#c99a9e', '#8a8380'];
+  let cfg = Object.assign({ focus: 25, brk: 5, reps: 4, sound: true, focusColor: '#c99a9e', breakColor: '#7cc3c6', bg: 'desk', mark: 'laptop', font: 'antonio' }, store.get('pomo.cfg', {}));
+  // Oswald was the default before; switch to the thinner Antonio once.
+  if (!cfg.fontV2) { if (cfg.font === 'oswald') cfg.font = 'antonio'; cfg.fontV2 = true; store.set('pomo.cfg', cfg); }
+  let st = store.get('pomo.state', null) || freshState();
+  let history = store.get('pomo.history', []);
+  let audio = null, wakeLock = null, wakeSupported = 'wakeLock' in navigator;
+
+  function freshState() { return { phase: 'focus', cycle: 1, running: false, endAt: 0, remaining: cfg.focus * 60000 }; }
+  function phaseLen(p) { return (p === 'focus' ? cfg.focus : cfg.brk) * 60000; }
+  function save() { store.set('pomo.state', st); }
+
+  // Timing is based on the end timestamp, so a throttled or hidden page catches up correctly.
+  function remainingNow() { return st.running ? st.endAt - Date.now() : st.remaining; }
+
+  function advance(at, chime) {
+    if (st.phase === 'focus') {
+      history.push({ at, min: cfg.focus });
+      if (history.length > 2000) history = history.slice(-2000);
+      store.set('pomo.history', history);
+      if (cfg.reps && st.cycle >= cfg.reps) {
+        st = { phase: 'done', cycle: st.cycle, running: false, endAt: 0, remaining: 0 };
+        if (chime) notify('done');
+        releaseWake();
+        return;
+      }
+      st.phase = 'break';
+    } else {
+      st.phase = 'focus';
+      st.cycle += 1;
+    }
+    if (st.running) st.endAt = at + phaseLen(st.phase);
+    else st.remaining = phaseLen(st.phase);
+    if (chime) notify(st.phase);
+  }
+
+  function tick() {
+    if (st.running) {
+      let guard = 0;
+      while (st.running && st.endAt <= Date.now() && guard++ < 500) {
+        const end = st.endAt;
+        advance(end, Date.now() - end < 5000);
+      }
+      save();
+    }
+    render();
+  }
+
+  function fmt(ms) {
+    const s = Math.max(0, Math.ceil(ms / 1000));
+    return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+  }
+
+  // Remaining time as a filled wedge, like a Time Timer disc: it starts at 12 o'clock,
+  // spreads counterclockwise, and shrinks back toward 12 as time runs out.
+  const R = 92;
+  function wedgePath(f) {
+    if (f <= 0) return '';
+    if (f >= 0.9999) return `M100 ${100 - R}A${R} ${R} 0 1 0 100 ${100 + R}A${R} ${R} 0 1 0 100 ${100 - R}Z`;
+    const t = f * 2 * Math.PI;
+    const x = (100 - R * Math.sin(t)).toFixed(2), y = (100 - R * Math.cos(t)).toFixed(2);
+    return `M100 100L100 ${100 - R}A${R} ${R} 0 ${f > 0.5 ? 1 : 0} 0 ${x} ${y}Z`;
+  }
+  function render() {
+    const rest = st.phase === 'break';
+    document.body.classList.toggle('rest', rest);
+    document.documentElement.style.setProperty('--wedge', rest ? cfg.breakColor : cfg.focusColor);
+    const rem = st.phase === 'done' ? 0 : remainingNow();
+    const total = st.phase === 'done' ? 1 : phaseLen(st.phase);
+    $('wedge').setAttribute('d', wedgePath(Math.min(1, Math.max(0, rem / total))));
+
+    $('phase').textContent = st.phase === 'focus' ? 'FOCUS' : rest ? 'BREAK' : 'COMPLETE';
+    $('time').textContent = st.phase === 'done' ? DONE_TEXT : fmt(rem);
+    $('time').classList.toggle('done', st.phase === 'done');
+    $('cycle').textContent = st.phase === 'done' ? `${st.cycle} SESSIONS · ${st.cycle * cfg.focus} MIN`
+      : cfg.reps ? `${Math.min(st.cycle, cfg.reps)} / ${cfg.reps}` : `${st.cycle} 回目`;
+    const ico = st.phase === 'focus' ? 'mark-' + cfg.mark : rest ? 'cup' : 'check';
+    if ($('phaseIco').dataset.k !== ico) { $('phaseIco').innerHTML = st.phase === 'focus' ? mark(cfg.mark, 36) : ICON[ico]; $('phaseIco').dataset.k = ico; }
+    if ($('icoTomato').dataset.k !== cfg.mark) { $('icoTomato').innerHTML = mark(cfg.mark, 30); $('icoTomato').dataset.k = cfg.mark; }
+
+    const running = st.running;
+    const key = running ? 'pause' : 'play';
+    if ($('startIco').dataset.k !== key) { $('startIco').innerHTML = ICON[key]; $('startIco').dataset.k = key; }
+    $('startTxt').textContent = running ? 'PAUSE' : st.phase === 'done' ? 'AGAIN' : (st.remaining < phaseLen(st.phase) ? 'RESUME' : 'START');
+    $('skip').disabled = st.phase === 'done';
+
+    document.title = running ? `${fmt(rem)} ${rest ? '休憩' : '作業'}` : 'ポモドーロタイマー';
+
+    $('cFocus').textContent = cfg.focus;
+    $('cBreak').textContent = cfg.brk;
+    $('cReps').textContent = cfg.reps || '∞';
+    $('cRepsU').textContent = cfg.reps ? '回' : '';
+  }
+
+  // Sound: WebAudio needs a tap to unlock on iPhone, so it is created on the first START.
+  function unlockAudio() {
+    try {
+      if (navigator.audioSession) navigator.audioSession.type = 'playback';
+      if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+      if (audio.state === 'suspended') audio.resume();
+    } catch (e) { audio = null; }
+  }
+  function chime(notes) {
+    if (!cfg.sound || !audio) return;
+    const t0 = audio.currentTime + 0.05;
+    notes.forEach(([f, t, d]) => {
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0, t0 + t);
+      g.gain.linearRampToValueAtTime(0.35, t0 + t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + t + d);
+      o.connect(g).connect(audio.destination);
+      o.start(t0 + t); o.stop(t0 + t + d + 0.05);
+    });
+  }
+  function notify(kind) {
+    if (kind === 'break') chime([[784, 0, 0.9], [659, 0.35, 1.2]]);
+    else if (kind === 'focus') chime([[659, 0, 0.9], [880, 0.35, 1.2]]);
+    else chime([[659, 0, 0.8], [784, 0.3, 0.8], [1047, 0.6, 1.6]]);
+    const f = $('flash'); f.classList.remove('on'); void f.offsetWidth; f.classList.add('on');
+  }
+
+  // Keep the screen on only while the timer runs.
+  async function requestWake() {
+    if (!wakeSupported) { showWake(); return; }
+    try {
+      if (wakeLock) return;
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; showWake(); });
+    } catch (e) { wakeLock = null; wakeSupported = wakeSupported && e.name !== 'NotAllowedError' ? wakeSupported : false; }
+    showWake();
+  }
+  function releaseWake() { if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; } showWake(); }
+  let wakeShown = null, wakeTimer = 0;
+  function showWake() {
+    const w = $('wake');
+    const msg = !st.running ? '' : wakeLock ? '動いている間は画面が消えません' : '画面のオフを止められません。自動ロックで消えることがあります';
+    if (msg === wakeShown) return;
+    wakeShown = msg;
+    w.textContent = msg;
+    clearTimeout(wakeTimer);
+    if (msg) wakeTimer = setTimeout(() => { w.textContent = ''; }, 4000);
+  }
+
+  function toggle() {
+    unlockAudio();
+    if (st.phase === 'done') { st = freshState(); }
+    if (st.running) {
+      st.remaining = Math.max(0, st.endAt - Date.now());
+      st.running = false;
+      releaseWake();
+    } else {
+      st.endAt = Date.now() + st.remaining;
+      st.running = true;
+      requestWake();
+    }
+    save(); render(); showWake();
+  }
+
+  $('start').addEventListener('click', toggle);
+  $('reset').addEventListener('click', () => { st = freshState(); releaseWake(); save(); render(); });
+  $('skip').addEventListener('click', () => {
+    unlockAudio();
+    const wasRunning = st.running;
+    advance(Date.now(), false);
+    if (!wasRunning && st.phase !== 'done') st.remaining = phaseLen(st.phase);
+    save(); render();
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') { tick(); if (st.running) requestWake(); }
+  });
+
+  // Tabs
+  document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach((x) => x.setAttribute('aria-selected', String(x === t)));
+    ['timer', 'history', 'stats'].forEach((v) => { $('v-' + v).hidden = v !== t.dataset.view; });
+    if (t.dataset.view === 'history') renderHistory();
+    if (t.dataset.view === 'stats') renderStats();
+  }));
+
+  const dayKey = (d) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+  const WD = ['日', '月', '火', '水', '木', '金', '土'];
+  function renderHistory() {
+    const box = $('historyList');
+    if (!history.length) {
+      box.innerHTML = '<div class="glass-block empty">まだ記録がありません。作業時間を最後まで終えると、ここに1件ずつ残ります。</div>';
+      $('clearWrap').hidden = true;
+      return;
+    }
+    $('clearWrap').hidden = false;
+    const groups = new Map();
+    history.slice().reverse().slice(0, 200).forEach((h) => {
+      const d = new Date(h.at), k = dayKey(d);
+      if (!groups.has(k)) groups.set(k, { d, items: [] });
+      groups.get(k).items.push(h);
+    });
+    const today = dayKey(new Date());
+    box.innerHTML = [...groups.entries()].map(([k, g]) => {
+      const label = k === today ? '今日' : `${g.d.getMonth() + 1}月${g.d.getDate()}日（${WD[g.d.getDay()]}）`;
+      const sum = g.items.reduce((s, h) => s + h.min, 0);
+      return `<div class="day">${label}　${g.items.length}回・${sum}分</div><div class="glass-block">` +
+        g.items.map((h) => {
+          const e = new Date(h.at), s = new Date(h.at - h.min * 60000);
+          const hm = (x) => `${x.getHours()}:${String(x.getMinutes()).padStart(2, '0')}`;
+          return `<div class="row"><span>${hm(s)} – ${hm(e)}</span><span>${h.min} min</span></div>`;
+        }).join('') + '</div>';
+    }).join('');
+  }
+  $('clearWrap').addEventListener('click', (e) => {
+    const w = $('clearWrap');
+    if (e.target.id === 'clearAsk') {
+      w.innerHTML = '<span>記録を消すと元に戻せません。</span><button id="clearYes">消す</button><button id="clearNo">やめる</button>';
+    } else if (e.target.id === 'clearYes') {
+      history = []; store.set('pomo.history', history);
+      w.innerHTML = '<button class="text-btn" id="clearAsk">記録をすべて消す</button>';
+      renderHistory();
+    } else if (e.target.id === 'clearNo') {
+      w.innerHTML = '<button class="text-btn" id="clearAsk">記録をすべて消す</button>';
+    }
+  });
+
+  function renderStats() {
+    const now = new Date(), today = dayKey(now);
+    const counts = {};
+    history.forEach((h) => { const k = dayKey(new Date(h.at)); counts[k] = counts[k] || { n: 0, m: 0 }; counts[k].n++; counts[k].m += h.min; });
+    const days = [];
+    for (let i = 6; i >= 0; i--) { const d = new Date(now); d.setDate(now.getDate() - i); days.push(d); }
+    const vals = days.map((d) => (counts[dayKey(d)] || { n: 0 }).n);
+    const max = Math.max(4, ...vals);
+    $('kToday').textContent = (counts[today] || { n: 0 }).n;
+    $('kMin').textContent = (counts[today] || { m: 0 }).m;
+    $('kWeek').textContent = vals.reduce((a, b) => a + b, 0);
+    $('bars').innerHTML = days.map((d, i) =>
+      `<div class="bar${i === 6 ? ' today' : ''}"><small>${vals[i] || ''}</small><i style="height:${(vals[i] / max * 100).toFixed(1)}%"></i><em>${i === 6 ? '今日' : WD[d.getDay()]}</em></div>`
+    ).join('');
+  }
+
+  // Settings sheet
+  const LIM = { focus: [1, 120], brk: [1, 60], reps: [0, 12] };
+  function renderSheet() {
+    $('oFocus').innerHTML = `${cfg.focus}<small>分</small>`;
+    $('oBreak').innerHTML = `${cfg.brk}<small>分</small>`;
+    $('oReps').innerHTML = cfg.reps ? `${cfg.reps}<small>回</small>` : '∞';
+    $('sound').checked = cfg.sound;
+    $('fonts').innerHTML = Object.entries(FONTS).map(([k, [family, weight, label]]) =>
+      `<button class="font-btn" data-f="${k}" aria-pressed="${k === cfg.font}"><b style="font-family:'${family}';font-weight:${weight}">25:00</b><span>${label}</span></button>`).join('');
+    $('marks').innerHTML =Object.keys(MARK_NAMES).map((k) =>
+      `<button class="mark-btn" data-m="${k}" aria-label="${MARK_NAMES[k]}" aria-pressed="${k === cfg.mark}">${mark(k, 28)}</button>`).join('');
+    [['swFocus', 'dotFocus', 'focusColor'], ['swBreak', 'dotBreak', 'breakColor']].forEach(([box, dot, k]) => {
+      $(dot).style.setProperty('--c', cfg[k]);
+      $(box).innerHTML = COLORS.map((c) =>
+        `<button class="swatch" style="--c:${c}" data-k="${k}" data-c="${c}" aria-label="色 ${c}" aria-pressed="${c === cfg[k]}"></button>`).join('');
+    });
+    $('presets').innerHTML = PRESETS.map((p, i) => {
+      const on = p.focus === cfg.focus && p.brk === cfg.brk && p.reps === cfg.reps;
+      return `<button class="chip" data-p="${i}" aria-pressed="${on}">${p.focus} / ${p.brk}　×${p.reps || '∞'}</button>`;
+    }).join('');
+  }
+  function applyCfg() {
+    store.set('pomo.cfg', cfg);
+    // Changing durations while idle resets the current phase length; a running timer keeps its end time.
+    if (!st.running) {
+      if (st.phase === 'done') st = freshState();
+      else st.remaining = phaseLen(st.phase);
+      save();
+    }
+    renderSheet(); render();
+  }
+  function openSheet(focusKey) {
+    renderSheet();
+    $('scrim').hidden = false;
+    const target = focusKey ? $('st-' + focusKey) : null;
+    if (target) { target.scrollIntoView({ block: 'center' }); target.querySelector('button').focus(); }
+    else $('done').focus();
+  }
+  function closeSheet() { $('scrim').hidden = true; }
+  $('gear').addEventListener('click', () => openSheet());
+  document.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => openSheet(b.dataset.open)));
+  $('done').addEventListener('click', closeSheet);
+  document.querySelector('.ring-wrap').addEventListener('click', () => openSheet('color'));
+  $('fonts').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-f]'); if (!b) return;
+    cfg.font = b.dataset.f; store.set('pomo.cfg', cfg);
+    applyFont(); renderSheet();
+  });
+  $('marks').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-m]'); if (!b) return;
+    cfg.mark = b.dataset.m; store.set('pomo.cfg', cfg);
+    renderSheet(); render();
+  });
+  ['swFocus', 'swBreak'].forEach((id) => $(id).addEventListener('click', (e) => {
+    const b = e.target.closest('[data-c]'); if (!b) return;
+    cfg[b.dataset.k] = b.dataset.c;
+    store.set('pomo.cfg', cfg);
+    renderSheet(); render();
+  }));
+  $('scrim').addEventListener('click', (e) => { if (e.target === $('scrim')) closeSheet(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheet(); });
+  $('presets').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-p]'); if (!b) return;
+    Object.assign(cfg, PRESETS[+b.dataset.p]); applyCfg();
+  });
+  document.querySelectorAll('.stepper button').forEach((b) => b.addEventListener('click', () => {
+    const k = b.dataset.k, [lo, hi] = LIM[k];
+    const step = k === 'reps' ? 1 : (cfg[k] >= 30 ? 5 : 1);
+    cfg[k] = Math.min(hi, Math.max(lo, cfg[k] + (+b.dataset.d) * step));
+    applyCfg();
+  }));
+  $('sound').addEventListener('change', (e) => { cfg.sound = e.target.checked; store.set('pomo.cfg', cfg); if (cfg.sound) { unlockAudio(); chime([[880, 0, 0.5]]); } });
+
+  // Backgrounds: plain black, the bundled photos, or the viewer's own photo.
+  let userPhoto = store.get('pomo.photo', '');
+  function applyBg() {
+    const b = $('backdrop');
+    const BG = { desk: 'bg-desk.webp', morning: 'bg-morning.webp', sunset: 'bg-sunset.webp', night: 'bg-night.webp', bedroom: 'bg-bedroom.webp' };
+    const url = BG[cfg.bg] || ((cfg.bg === 'photo' && userPhoto) ? userPhoto : '');
+    b.style.backgroundImage = url ? `url("${url}")` : '';
+    b.classList.toggle('photo', !!url);
+    b.classList.toggle('black', !url);
+    $('thumbPhoto').style.backgroundImage = userPhoto ? `url("${userPhoto}")` : '';
+    document.querySelectorAll('.bg-tile').forEach((t) => t.setAttribute('aria-pressed', String(t.dataset.bg === (url ? cfg.bg : 'black'))));
+  }
+  $('bgs').addEventListener('click', (e) => {
+    const t = e.target.closest('[data-bg]'); if (!t) return;
+    if (t.dataset.bg === 'photo' && !userPhoto) { $('photo').click(); return; }
+    cfg.bg = t.dataset.bg; store.set('pomo.cfg', cfg); applyBg();
+  });
+  function showPhoto(url) {
+    userPhoto = url;
+    cfg.bg = url ? 'photo' : 'black';
+    store.set('pomo.cfg', cfg);
+    applyBg();
+  }
+  $('photo').addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0]; if (!file) return;
+    const img = new Image(), src = URL.createObjectURL(file);
+    img.onload = () => {
+      const s = Math.min(1, 1400 / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      const url = c.toDataURL('image/jpeg', 0.8);
+      URL.revokeObjectURL(src);
+      showPhoto(url);
+      store.set('pomo.photo', url);
+    };
+    img.src = src;
+    e.target.value = '';
+  });
+
+  $('icoCup').innerHTML = ICON.cup;
+  applyBg();
+  applyFont();
+  if (st.running) requestWake();
+  tick();
+  setInterval(tick, 250);
+})();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+}
+</script>
+</body>
+</html>
